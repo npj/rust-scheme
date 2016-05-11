@@ -6,12 +6,12 @@ use std::fmt::Error;
 
 #[derive(PartialEq, Debug)]
 pub enum Token {
-    LPAR,
-    RPAR,
-    COMMENT(String),
-    STRING(String),
-    INTEGER(String),
-    IDENT(String)
+    LPAR(u32, u32),
+    RPAR(u32, u32),
+    COMMENT(String, u32, u32),
+    STRING(String, u32, u32),
+    INTEGER(String, u32, u32),
+    IDENT(String, u32, u32)
 }
 
 #[derive(PartialEq, Debug)]
@@ -78,17 +78,23 @@ pub trait Lexer {
     }
 
     fn lpar(&mut self) -> Result<Token, LexError> {
+        let line = self.line();
+        let chr  = self.chr();
         self.get();
-        Ok(Token::LPAR)
+        Ok(Token::LPAR(line, chr))
     }
 
     fn rpar(&mut self) -> Result<Token, LexError> {
+        let line = self.line();
+        let chr  = self.chr();
         self.get();
-        Ok(Token::RPAR)
+        Ok(Token::RPAR(line, chr))
     }
 
     // consume until end of line
     fn comment(&mut self) -> Result<Token, LexError> {
+        let line        = self.line();
+        let chr         = self.chr();
         let mut comment = String::new();
         while let Some(c) = self.get() {
             if c != '\n' {
@@ -97,7 +103,7 @@ pub trait Lexer {
                 break;
             }
         }
-        Ok(Token::COMMENT(comment.trim().to_string()))
+        Ok(Token::COMMENT(comment.trim().to_string(), line, chr))
     }
 
     fn string(&mut self) -> Result<Token, LexError> {
@@ -116,7 +122,7 @@ pub trait Lexer {
                     None       => break
                 },
                 '\n' => break,
-                '\"' => return Ok(Token::STRING(string)),
+                '\"' => return Ok(Token::STRING(string, start_line, start_chr)),
                 _    => string.push(c)
             };
         }
@@ -124,11 +130,11 @@ pub trait Lexer {
     }
 
     fn integer(&mut self) -> Result<Token, LexError> {
-        Ok(Token::LPAR)
+        Ok(Token::LPAR(self.line(), self.chr()))
     }
 
     fn ident(&mut self) -> Result<Token, LexError> {
-        Ok(Token::RPAR)
+        Ok(Token::RPAR(self.line(), self.chr()))
     }
 }
 
@@ -259,28 +265,28 @@ mod tests {
     fn read_lpar() {
         let mut lexer = StringLexer::new("(".to_string());
         let token = lexer.next().ok().unwrap();
-        assert_eq!(token, Token::LPAR);
+        assert_eq!(token, Token::LPAR(1, 1));
     }
 
     #[test]
     fn read_rpar() {
         let mut lexer = StringLexer::new(")".to_string());
         let token = lexer.next().ok().unwrap();
-        assert_eq!(token, Token::RPAR);
+        assert_eq!(token, Token::RPAR(1, 1));
     }
 
     #[test]
     fn read_string() {
         let mut lexer = StringLexer::new("\"\\\"Hello\\\", world!\\\n\"".to_string());
         let token = lexer.next().ok().unwrap();
-        assert_eq!(token, Token::STRING("\"Hello\", world!\n".to_string()));
+        assert_eq!(token, Token::STRING("\"Hello\", world!\n".to_string(), 1, 1));
     }
 
     #[test]
     fn read_comment() {
         let mut lexer = StringLexer::new("; this is some code that does some stuff".to_string());
         let token = lexer.next().ok().unwrap();
-        assert_eq!(token, Token::COMMENT("; this is some code that does some stuff".to_string()));
+        assert_eq!(token, Token::COMMENT("; this is some code that does some stuff".to_string(), 1, 1));
     }
 
     #[test]
@@ -289,14 +295,22 @@ mod tests {
             ; hello, this is a comment \n\
             (\"this is a \\\"string\\\" with some escape chars\") \n\
             (   ) ; this is a comment after something on a line \n\
-                            ( \"s p a c e\" ) ; space \n\
+            (               ( \"s p a c e\" ) ; space \n\
             ".to_string());
 
         let expected = vec![
-            Token::COMMENT("; hello, this is a comment".to_string()),
-            Token::LPAR, Token::STRING("this is a \"string\" with some escape chars".to_string()), Token::RPAR,
-            Token::LPAR, Token::RPAR, Token::COMMENT("; this is a comment after something on a line".to_string()),
-            Token::LPAR, Token::STRING("s p a c e".to_string()), Token::RPAR, Token::COMMENT("; space".to_string())
+            Token::COMMENT("; hello, this is a comment".to_string(), 1, 1),
+            Token::LPAR(2, 1),
+            Token::STRING("this is a \"string\" with some escape chars".to_string(), 2, 2),
+            Token::RPAR(2, 47),
+            Token::LPAR(3, 1),
+            Token::RPAR(3, 5),
+            Token::COMMENT("; this is a comment after something on a line".to_string(), 3, 7),
+            Token::LPAR(4, 1),
+            Token::LPAR(4, 17),
+            Token::STRING("s p a c e".to_string(), 4, 19),
+            Token::RPAR(4, 31),
+            Token::COMMENT("; space".to_string(), 4, 33)
         ];
 
         let mut tokens = vec![];
@@ -309,7 +323,7 @@ mod tests {
     #[test]
     fn error_invalid() {
         let mut lexer = StringLexer::new("(    # )".to_string());
-        assert_eq!(lexer.next().ok().unwrap(), Token::LPAR);
+        lexer.next().ok().unwrap();
         assert_eq!(lexer.next().err().unwrap(), LexError::INVALID('#', 1, 6));
     }
 
@@ -322,7 +336,7 @@ mod tests {
     #[test]
     fn error_end_nonempty() {
         let mut lexer = StringLexer::new(")".to_string());
-        assert_eq!(lexer.next().ok().unwrap(), Token::RPAR);
+        lexer.next().ok().unwrap();
         assert_eq!(lexer.next().err().unwrap(), LexError::END(1, 2));
     }
 
