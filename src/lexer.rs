@@ -16,9 +16,9 @@ pub enum Token {
 
 #[derive(PartialEq, Debug)]
 pub enum LexError {
-    INVALID(char),
-    UNTERMINATED(String),
-    END
+    INVALID(char, u32, u32),
+    UNTERMINATED(String, u32, u32),
+    END(u32, u32)
 }
 
 pub trait Lexer {
@@ -47,7 +47,7 @@ pub trait Lexer {
     fn next(&mut self) -> Result<Token, LexError> {
         self.consume_whitespace();
         match self.peek() {
-            None    => Err(LexError::END),
+            None    => Err(LexError::END(self.line(), self.chr())),
             Some(_) => self.read_token()
         }
     }
@@ -61,9 +61,9 @@ pub trait Lexer {
                 '"'         => self.string(),
                 '0' ... '9' => self.integer(),
                 'A' ... 'z' => self.ident(),
-                _           => Err(LexError::INVALID(c))
+                _           => Err(LexError::INVALID(c, self.line(), self.chr()))
             },
-            None => Err(LexError::END)
+            None => Err(LexError::END(self.line(), self.chr()))
         }
     }
 
@@ -102,6 +102,8 @@ pub trait Lexer {
 
     fn string(&mut self) -> Result<Token, LexError> {
         let mut string = String::new();
+        let start_line = self.line();
+        let start_chr  = self.chr();
 
         /* consume first quotation mark */
         self.get();
@@ -118,7 +120,7 @@ pub trait Lexer {
                 _    => string.push(c)
             };
         }
-        Err(LexError::UNTERMINATED(string))
+        Err(LexError::UNTERMINATED(string, start_line, start_chr))
     }
 
     fn integer(&mut self) -> Result<Token, LexError> {
@@ -308,25 +310,31 @@ mod tests {
     fn error_invalid() {
         let mut lexer = StringLexer::new("(    # )".to_string());
         assert_eq!(lexer.next().ok().unwrap(), Token::LPAR);
-        assert_eq!(lexer.next().err().unwrap(), LexError::INVALID('#'));
+        assert_eq!(lexer.next().err().unwrap(), LexError::INVALID('#', 1, 6));
     }
 
     #[test]
     fn error_end_empty() {
         let mut lexer = StringLexer::new("".to_string());
-        assert_eq!(lexer.next().err().unwrap(), LexError::END);
+        assert_eq!(lexer.next().err().unwrap(), LexError::END(1, 1));
     }
 
     #[test]
     fn error_end_nonempty() {
         let mut lexer = StringLexer::new(")".to_string());
         assert_eq!(lexer.next().ok().unwrap(), Token::RPAR);
-        assert_eq!(lexer.next().err().unwrap(), LexError::END);
+        assert_eq!(lexer.next().err().unwrap(), LexError::END(1, 2));
     }
 
     #[test]
     fn error_unterminated() {
         let mut lexer = StringLexer::new("\"This is an unterminated string ()".to_string());
-        assert_eq!(lexer.next().err().unwrap(), LexError::UNTERMINATED("This is an unterminated string ()".to_string()));
+        assert_eq!(lexer.next().err().unwrap(), LexError::UNTERMINATED("This is an unterminated string ()".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn error_unterminated_multiline() {
+        let mut lexer = StringLexer::new("\n \n \"This is an \\\n unterminated string ()".to_string());
+        assert_eq!(lexer.next().err().unwrap(), LexError::UNTERMINATED("This is an \n unterminated string ()".to_string(), 3, 2));
     }
 }
