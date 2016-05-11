@@ -14,11 +14,11 @@ pub enum Token {
     IDENT(String)
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum LexError {
-    INVALID(char, u32, u32),
-    UNTERMINATED(String, u32, u32),
-    END(u32, u32)
+    INVALID(char),
+    UNTERMINATED(String),
+    END
 }
 
 pub trait Lexer {
@@ -256,28 +256,28 @@ mod tests {
     #[test]
     fn read_lpar() {
         let mut lexer = StringLexer::new("(".to_string());
-        let token = lexer.next().unwrap();
+        let token = lexer.next().ok().unwrap();
         assert_eq!(token, Token::LPAR);
     }
 
     #[test]
     fn read_rpar() {
         let mut lexer = StringLexer::new(")".to_string());
-        let token = lexer.next().unwrap();
+        let token = lexer.next().ok().unwrap();
         assert_eq!(token, Token::RPAR);
     }
 
     #[test]
     fn read_string() {
         let mut lexer = StringLexer::new("\"\\\"Hello\\\", world!\\\n\"".to_string());
-        let token = lexer.next().unwrap();
+        let token = lexer.next().ok().unwrap();
         assert_eq!(token, Token::STRING("\"Hello\", world!\n".to_string()));
     }
 
     #[test]
     fn read_comment() {
         let mut lexer = StringLexer::new("; this is some code that does some stuff".to_string());
-        let token = lexer.next().unwrap();
+        let token = lexer.next().ok().unwrap();
         assert_eq!(token, Token::COMMENT("; this is some code that does some stuff".to_string()));
     }
 
@@ -302,5 +302,31 @@ mod tests {
             tokens.push(token)
         }
         assert_eq!(tokens, expected);
+    }
+
+    #[test]
+    fn error_invalid() {
+        let mut lexer = StringLexer::new("(    # )".to_string());
+        assert_eq!(lexer.next().ok().unwrap(), Token::LPAR);
+        assert_eq!(lexer.next().err().unwrap(), LexError::INVALID('#'));
+    }
+
+    #[test]
+    fn error_end_empty() {
+        let mut lexer = StringLexer::new("".to_string());
+        assert_eq!(lexer.next().err().unwrap(), LexError::END);
+    }
+
+    #[test]
+    fn error_end_nonempty() {
+        let mut lexer = StringLexer::new(")".to_string());
+        assert_eq!(lexer.next().ok().unwrap(), Token::RPAR);
+        assert_eq!(lexer.next().err().unwrap(), LexError::END);
+    }
+
+    #[test]
+    fn error_unterminated() {
+        let mut lexer = StringLexer::new("\"This is an unterminated string ()".to_string());
+        assert_eq!(lexer.next().err().unwrap(), LexError::UNTERMINATED("This is an unterminated string ()".to_string()));
     }
 }
