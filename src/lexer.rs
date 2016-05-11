@@ -18,6 +18,7 @@ pub enum Token {
 pub enum LexError {
     INVALID(char, u32, u32),
     UNTERMINATED(String, u32, u32),
+    IDENT(String, u32, u32),
     END(u32, u32)
 }
 
@@ -134,7 +135,20 @@ pub trait Lexer {
     }
 
     fn ident(&mut self) -> Result<Token, LexError> {
-        Ok(Token::RPAR(self.line(), self.chr()))
+        let invalid = vec!['[', ']', '{', '}', '(', ')', '|', '\\', '/', '\'', '\"', '#', ','];
+        let start_line = self.line();
+        let start_chr  = self.chr();
+        let mut ident = String::new();
+
+        while let Some(c) = self.get() {
+            if invalid.contains(&c) {
+                return Err(LexError::IDENT(ident, start_line, start_chr))
+            } else {
+                ident.push(c)
+            }
+        }
+
+        Ok(Token::IDENT(ident, start_line, start_chr))
     }
 }
 
@@ -290,6 +304,13 @@ mod tests {
     }
 
     #[test]
+    fn read_ident() {
+        let mut lexer = StringLexer::new("an-!@$%^&*-+=~?.ident-can-have-all-these-chars".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::IDENT("an-!@$%^&*-+=~?.ident-can-have-all-these-chars".to_string(), 1, 1));
+    }
+
+    #[test]
     fn read_all() {
         let mut lexer = StringLexer::new("\
             ; hello, this is a comment \n\
@@ -344,6 +365,23 @@ mod tests {
     fn error_unterminated() {
         let mut lexer = StringLexer::new("\"This is an unterminated string ()".to_string());
         assert_eq!(lexer.next().err().unwrap(), LexError::UNTERMINATED("This is an unterminated string ()".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn error_ident() {
+        let invalid = vec!['[', ']', '{', '}', '(', ')', '|', '\\', '/', '\'', '\"', '#', ','];
+        let ident_pre = "an-ident-cannot-have-";
+        let ident_suf = "-as-a-char";
+
+        for i in invalid {
+            let mut ident = String::new();
+            ident = ident + &ident_pre;
+            ident.push(i);
+            ident = ident + &ident_suf;
+
+            let mut lexer = StringLexer::new(ident);
+            assert_eq!(lexer.next().err().unwrap(), LexError::IDENT(ident_pre.to_string(), 1, 1));
+        }
     }
 
     #[test]
