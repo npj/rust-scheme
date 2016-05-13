@@ -39,7 +39,7 @@ impl<T: Read> Lexer for IOLexer<T> {
         }
     }
 
-    fn peek(&mut self) -> Option<char> {
+    fn peek(&self) -> Option<char> {
         if self.eof {
             None
         } else {

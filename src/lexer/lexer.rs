@@ -18,7 +18,7 @@ pub enum LexError {
 
 pub trait Lexer {
     fn get(&mut self) -> Option<char>;
-    fn peek(&mut self) -> Option<char>;
+    fn peek(&self) -> Option<char>;
     fn set_line(&mut self, line: u32) -> ();
     fn set_chr(&mut self, chr: u32) -> ();
     fn line(&self) -> u32;

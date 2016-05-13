@@ -26,7 +26,7 @@ impl Lexer for StringLexer {
         }
     }
 
-    fn peek(&mut self) -> Option<char> {
+    fn peek(&self) -> Option<char> {
         if self.index < self.input.len() {
             Some(self.input[self.index] as char)
         } else {
