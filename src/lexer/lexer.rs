@@ -5,7 +5,18 @@ pub enum Token {
     COMMENT(String, u32, u32),
     STRING(String, u32, u32),
     INTEGER(String, u32, u32),
+    FLOAT(String, u32, u32),
     IDENT(String, u32, u32)
+}
+
+impl Token {
+    fn number(string: String, is_float: bool, line: u32, chr: u32) -> Token {
+        if is_float {
+            Token::FLOAT(string, line, chr)
+        } else {
+            Token::INTEGER(string, line, chr)
+        }
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -13,7 +24,19 @@ pub enum LexError {
     INVALID(char, u32, u32),
     UNTERMINATED(String, u32, u32),
     IDENT(String, u32, u32),
+    INTEGER(String, u32, u32),
+    FLOAT(String, u32, u32),
     END(u32, u32)
+}
+
+impl LexError {
+    fn number(string: String, is_float: bool, line: u32, chr: u32) -> LexError {
+        if is_float {
+            LexError::FLOAT(string, line, chr)
+        } else {
+            LexError::INTEGER(string, line, chr)
+        }
+    }
 }
 
 pub trait Lexer {
@@ -50,13 +73,13 @@ pub trait Lexer {
     fn read_token(&mut self) -> Result<Token, LexError> {
         match self.peek() {
             Some(c) => match c {
-                '('         => self.lpar(),
-                ')'         => self.rpar(),
-                ';'         => self.comment(),
-                '"'         => self.string(),
-                '0' ... '9' => self.integer(),
-                'A' ... 'z' => self.ident(),
-                _           => Err(LexError::INVALID(c, self.line(), self.chr()))
+                '('                     => self.lpar(),
+                ')'                     => self.rpar(),
+                ';'                     => self.comment(),
+                '"'                     => self.string(),
+                '0' ... '9' | '-' | '.' => self.number(),
+                'A' ... 'z'             => self.ident(),
+                _                       => Err(LexError::INVALID(c, self.line(), self.chr()))
             },
             None => Err(LexError::END(self.line(), self.chr()))
         }
@@ -124,19 +147,48 @@ pub trait Lexer {
         Err(LexError::UNTERMINATED(string, start_line, start_chr))
     }
 
-    fn integer(&mut self) -> Result<Token, LexError> {
-        Ok(Token::LPAR(self.line(), self.chr()))
+    fn number(&mut self) -> Result<Token, LexError> {
+        let mut number = String::new();
+        let start_line = self.line();
+        let start_chr  = self.chr();
+        let mut float  = false;
+
+        if let Some('-') = self.peek() {
+            number.push('-');
+            self.get();
+        }
+
+        while let Some(c) = self.get() {
+            number.push(c);
+            match c {
+                '0' ... '9' => (),
+                '.' => if float {
+                    return Err(LexError::FLOAT(number, start_line, start_chr))
+                } else {
+                    float = true
+                },
+                _ => if c.is_whitespace() {
+                    break
+                } else {
+                    return Err(LexError::number(number, float, start_line, start_chr))
+                }
+            }
+        }
+
+        Ok(Token::number(number.trim().to_string(), float, start_line, start_chr))
     }
 
     fn ident(&mut self) -> Result<Token, LexError> {
-        let invalid = vec!['[', ']', '{', '}', '(', ')', '|', '\\', '/', '\'', '\"', '#', ','];
+        let invalid    = vec!['[', ']', '{', '}', '(', ')', '|', '\\', '/', '\'', '\"', '#', ','];
         let start_line = self.line();
         let start_chr  = self.chr();
-        let mut ident = String::new();
+        let mut ident  = String::new();
 
         while let Some(c) = self.get() {
             if invalid.contains(&c) {
                 return Err(LexError::IDENT(ident, start_line, start_chr))
+            } else if c.is_whitespace() {
+                break
             } else {
                 ident.push(c)
             }
@@ -187,12 +239,97 @@ mod tests {
     }
 
     #[test]
+    fn read_integer() {
+        let mut lexer = StringLexer::new("12345".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::INTEGER("12345".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_negative_integer() {
+        let mut lexer = StringLexer::new("-12345".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::INTEGER("-12345".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_invalid_integer() {
+        let mut lexer = StringLexer::new("12f345".to_string());
+        let token = lexer.next().err().unwrap();
+        assert_eq!(token, LexError::INTEGER("12f".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_float_dot() {
+        let mut lexer = StringLexer::new("12345.".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::FLOAT("12345.".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_float_dot_zero() {
+        let mut lexer = StringLexer::new("12345.0".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::FLOAT("12345.0".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_float_dot_digits() {
+        let mut lexer = StringLexer::new(".12345".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::FLOAT(".12345".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_float_digits_dot_digits() {
+        let mut lexer = StringLexer::new("12345.12345".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::FLOAT("12345.12345".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_float_dot_digits_trailing_zero() {
+        let mut lexer = StringLexer::new("12345.123450".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::FLOAT("12345.123450".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_float_negative_dot_digits() {
+        let mut lexer = StringLexer::new("-.12345".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::FLOAT("-.12345".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_negative_float_dot_digits() {
+        let mut lexer = StringLexer::new("-12345.12345".to_string());
+        let token = lexer.next().ok().unwrap();
+        assert_eq!(token, Token::FLOAT("-12345.12345".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_invalid_float_whole() {
+        let mut lexer = StringLexer::new("12f345.12345".to_string());
+        let token = lexer.next().err().unwrap();
+        assert_eq!(token, LexError::INTEGER("12f".to_string(), 1, 1));
+    }
+
+    #[test]
+    fn read_invalid_float_fractional() {
+        let mut lexer = StringLexer::new("12345.12f345".to_string());
+        let token = lexer.next().err().unwrap();
+        assert_eq!(token, LexError::FLOAT("12345.12f".to_string(), 1, 1));
+    }
+
+    #[test]
     fn read_all() {
         let mut lexer = StringLexer::new("\
             ; hello, this is a comment \n\
             (\"this is a \\\"string\\\" with some escape chars\") \n\
             (   ) ; this is a comment after something on a line \n\
             (               ( \"s p a c e\" ) ; space \n\
+            12345 is-a-number so_is -78.910 \n\
             ".to_string());
 
         let expected = vec![
@@ -207,14 +344,19 @@ mod tests {
             Token::LPAR(4, 17),
             Token::STRING("s p a c e".to_string(), 4, 19),
             Token::RPAR(4, 31),
-            Token::COMMENT("; space".to_string(), 4, 33)
+            Token::COMMENT("; space".to_string(), 4, 33),
+            Token::INTEGER("12345".to_string(), 5, 1),
+            Token::IDENT("is-a-number".to_string(), 5, 7),
+            Token::IDENT("so_is".to_string(), 5, 19),
+            Token::FLOAT("-78.910".to_string(), 5, 25)
         ];
 
         let mut tokens = vec![];
         while let Ok(token) = lexer.next() {
             tokens.push(token)
         }
-        assert_eq!(tokens, expected);
+
+        assert_eq!(tokens, expected)
     }
 
     #[test]
