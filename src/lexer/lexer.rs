@@ -1,9 +1,3 @@
-use std::io::Read;
-use std::io::BufReader;
-use std::fmt::Debug;
-use std::fmt::Formatter;
-use std::fmt::Error;
-
 #[derive(PartialEq, Debug)]
 pub enum Token {
     LPAR(u32, u32),
@@ -152,128 +146,10 @@ pub trait Lexer {
     }
 }
 
-pub struct IOLexer<T: Read> {
-    input: BufReader<T>,
-    full:  bool,
-    buf:   [u8; 1],
-    line:  u32,
-    chr:   u32
-}
-
-impl<T: Read> IOLexer<T> {
-    pub fn new(input: T) -> IOLexer<T> {
-        IOLexer { input: BufReader::new(input), buf: [0], full: false, line: 1, chr: 1 }
-    }
-}
-
-impl<T: Read> Lexer for IOLexer<T> {
-    fn get(&mut self) -> Option<char> {
-        let c;
-        if self.full {
-            c = self.buf[0] as char;
-            self.peek();
-            self.count(c);
-            Some(c)
-        } else if let Some(c) = self.get() {
-            Some(c)
-        } else {
-            None
-        }
-    }
-
-    fn peek(&mut self) -> Option<char> {
-        if self.full {
-            Some(self.buf[0] as char)
-        } else {
-            match self.input.read(&mut self.buf) {
-                Ok(0)  => None,
-                Ok(_)  => {
-                    self.full = true;
-                    Some(self.buf[0] as char)
-                }
-                Err(_) => None
-            }
-        }
-    }
-
-    fn set_line(&mut self, line: u32) -> () {
-        self.line = line
-    }
-
-    fn set_chr(&mut self, chr: u32) -> () {
-        self.chr = chr
-    }
-
-    fn line(&self) -> u32 {
-        self.line
-    }
-
-    fn chr(&self) -> u32 {
-        self.chr
-    }
-}
-
-pub struct StringLexer {
-    input: Vec<u8>,
-    index: usize,
-    line:  u32,
-    chr:   u32
-}
-
-
-impl StringLexer {
-    pub fn new(input: String) -> StringLexer {
-        StringLexer { input: input.into_bytes(), index: 0, line: 1, chr: 1 }
-    }
-}
-
-impl Lexer for StringLexer {
-    fn get(&mut self) -> Option<char> {
-        match self.peek() {
-            Some(c) => {
-                self.index = self.index + 1;
-                self.count(c);
-                Some(c)
-            },
-            None => None
-        }
-    }
-
-    fn peek(&mut self) -> Option<char> {
-        if self.index < self.input.len() {
-            Some(self.input[self.index] as char)
-        } else {
-            None
-        }
-    }
-
-    fn set_line(&mut self, line: u32) -> () {
-        self.line = line
-    }
-
-    fn set_chr(&mut self, chr: u32) -> () {
-        self.chr = chr
-    }
-
-    fn line(&self) -> u32 {
-        self.line
-    }
-
-    fn chr(&self) -> u32 {
-        self.chr
-    }
-}
-
-impl<T: Read> Debug for IOLexer<T> {
-    fn fmt(&self, fmt: &mut Formatter) -> Result<(), Error> {
-        write!(fmt, "IOLexer {{ line: { }, chr: { } }}", self.line, self.chr)
-    }
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lexer::StringLexer;
 
     #[test]
     fn read_lpar() {
